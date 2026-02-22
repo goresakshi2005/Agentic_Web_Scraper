@@ -8,9 +8,10 @@ import {
   Copy, 
   Download, 
   Loader2, 
-  ChevronRight, 
   Trash2,
-  Globe
+  Globe,
+  Database,
+  RefreshCw
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -25,11 +26,19 @@ function App() {
   // Load history from localStorage on mount
   useEffect(() => {
     const saved = JSON.parse(localStorage.getItem('search_history') || '[]');
-    setHistory(saved);
+    // Migrate old entries (without created_at) by adding a placeholder
+    const migrated = saved.map(item => ({
+      ...item,
+      created_at: item.created_at || new Date().toISOString() // fallback to now
+    }));
+    setHistory(migrated);
   }, []);
 
   const saveToHistory = (newRecord) => {
-    const updated = [newRecord, ...history.filter(h => h.topic !== newRecord.topic)].slice(0, 10);
+    // newRecord should contain topic, depth, summary, created_at
+    const updated = [newRecord, ...history.filter(h => 
+      !(h.topic === newRecord.topic && h.depth === newRecord.depth)
+    )].slice(0, 10);
     setHistory(updated);
     localStorage.setItem('search_history', JSON.stringify(updated));
   };
@@ -40,6 +49,7 @@ function App() {
     localStorage.setItem('search_history', JSON.stringify(updated));
   };
 
+  // Perform a new search (POST)
   const handleSubmit = async (e, customTopic = null, customDepth = null) => {
     if (e) e.preventDefault();
     const activeTopic = customTopic || topic;
@@ -54,9 +64,42 @@ function App() {
         depth: activeDepth,
       });
       setSummary(response.data.summary);
-      saveToHistory({ topic: activeTopic, depth: activeDepth, summary: response.data.summary });
+      // Save to history with created_at from response
+      saveToHistory({ 
+        topic: activeTopic, 
+        depth: activeDepth, 
+        summary: response.data.summary,
+        created_at: response.data.created_at
+      });
     } catch (err) {
       setError(err.response?.data?.error || 'The research agent encountered an error.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load cached summary from database (GET)
+  const handleLoadCached = async (topic, depth) => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await axios.get('http://localhost:8000/api/search/', {
+        params: { topic, depth }
+      });
+      setSummary(response.data.summary);
+      // Save to history with created_at from response (original timestamp)
+      saveToHistory({
+        topic,
+        depth,
+        summary: response.data.summary,
+        created_at: response.data.created_at
+      });
+    } catch (err) {
+      if (err.response?.status === 404) {
+        setError('Cached record expired or not found. Try a fresh search.');
+      } else {
+        setError(err.response?.data?.error || 'Failed to load cached summary.');
+      }
     } finally {
       setLoading(false);
     }
@@ -67,46 +110,85 @@ function App() {
     alert('Summary copied to clipboard!');
   };
 
+  // Format date for display
+  const formatDate = (isoString) => {
+    const date = new Date(isoString);
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
-      {/* Container with max width and auto margins to center */}
       <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* SIDEBAR: History (3/12 = 25% on large screens) */}
+        {/* SIDEBAR: History */}
         <aside className="lg:col-span-3 space-y-4">
           <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
             <h2 className="flex items-center gap-2 font-bold mb-4 text-slate-600 dark:text-slate-400">
               <History size={18} /> Recent Research
             </h2>
-            <div className="space-y-2">
-              {history.length === 0 && <p className="text-sm text-slate-400 italic">No recent searches</p>}
+            <div className="space-y-3">
+              {history.length === 0 && (
+                <p className="text-sm text-slate-400 italic">No recent searches</p>
+              )}
               {history.map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between group">
-                  <button
-                    onClick={() => {
-                      setTopic(item.topic);
-                      setDepth(item.depth);
-                      handleSubmit(null, item.topic, item.depth);
-                    }}
-                    className="flex-1 text-left p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm truncate"
-                  >
+                <div
+                  key={idx}
+                  className="group bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  {/* Topic - full, wraps if needed */}
+                  <div className="font-medium text-sm break-words pr-1">
                     {item.topic}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteHistoryItem(idx);
-                    }}
-                    className="p-1 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                    aria-label="Delete from history"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  </div>
+
+                  {/* Date/time of last search */}
+                  <p className="text-xs text-slate-400 mt-1">
+                    {formatDate(item.created_at)}
+                  </p>
+
+                  {/* Buttons with icons and labels */}
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    <button
+                      onClick={() => handleLoadCached(item.topic, item.depth)}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors"
+                      title="Load cached summary"
+                    >
+                      <Database size={12} />
+                      <span>Load</span>
+                    </button>
+                    <button
+                      onClick={() => handleSubmit(null, item.topic, item.depth)}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 transition-colors"
+                      title="Research again"
+                    >
+                      <RefreshCw size={12} />
+                      <span>Research</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteHistoryItem(idx);
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 text-slate-700 dark:text-slate-200 transition-colors"
+                      title="Remove from history"
+                    >
+                      <Trash2 size={12} />
+                      <span>Remove</span>
+                    </button>
+                  </div>
                 </div>
               ))}
+
               {history.length > 0 && (
-                <button 
-                  onClick={() => {setHistory([]); localStorage.removeItem('search_history')}}
+                <button
+                  onClick={() => {
+                    setHistory([]);
+                    localStorage.removeItem('search_history');
+                  }}
                   className="mt-4 flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
                 >
                   <Trash2 size={12} /> Clear History
@@ -116,7 +198,7 @@ function App() {
           </div>
         </aside>
 
-        {/* MAIN: Search & Content (9/12 = 75% on large screens) */}
+        {/* MAIN: Search & Content */}
         <main className="lg:col-span-9 space-y-6">
           {/* Hero Header */}
           <header className="text-center mb-10">

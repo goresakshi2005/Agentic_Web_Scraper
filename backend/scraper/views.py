@@ -52,13 +52,11 @@ class SearchView(APIView):
         
         try:
             print(f"🚀 Tavily searching: {topic}")
-            # include_answer=True gives a quick AI summary from Tavily
-            # search_depth="advanced" is better for technical topics
             search_result = tavily.search(
                 query=topic, 
                 search_depth=tavily_depth, 
                 max_results=max_results,
-                include_raw_content=True # This replaces BeautifulSoup scraping
+                include_raw_content=True
             )
         except Exception as e:
             return Response({"error": f"Tavily search failed: {str(e)}"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -66,7 +64,6 @@ class SearchView(APIView):
         # 3. Process Content
         context_text = ""
         for result in search_result['results']:
-            # Tavily provides clean 'content' and 'raw_content'
             content = result.get('raw_content') or result.get('content')
             context_text += f"\n\nSource: {result['url']}\nContent: {content}"
 
@@ -97,3 +94,17 @@ class SearchView(APIView):
         )
 
         return Response(SearchResultSerializer(obj).data, status=status.HTTP_201_CREATED)
+
+    def get(self, request):
+        """Retrieve a cached search record by topic and depth (query params)."""
+        topic = request.query_params.get('topic')
+        depth = request.query_params.get('depth')
+        if not topic or not depth:
+            return Response({"error": "topic and depth are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        expiry_date = timezone.now() - timedelta(days=4)
+        try:
+            record = SearchRecord.objects.get(topic=topic, depth=depth, created_at__gte=expiry_date)
+            return Response(SearchResultSerializer(record).data)
+        except SearchRecord.DoesNotExist:
+            return Response({"error": "No fresh cached record found."}, status=status.HTTP_404_NOT_FOUND)
