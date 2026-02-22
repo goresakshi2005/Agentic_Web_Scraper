@@ -10,10 +10,9 @@ import {
   Loader2, 
   ChevronRight, 
   Trash2,
-  ExternalLink,
   Globe
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 
 function App() {
   const [topic, setTopic] = useState('');
@@ -64,10 +63,11 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
-      <div className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-4 gap-8">
+      {/* Container with max width and auto margins to center */}
+      <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* SIDEBAR: History */}
-        <aside className="lg:col-span-1 space-y-4">
+        {/* SIDEBAR: History (3/12 = 25% on large screens) */}
+        <aside className="lg:col-span-3 space-y-4">
           <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
             <h2 className="flex items-center gap-2 font-bold mb-4 text-slate-600 dark:text-slate-400">
               <History size={18} /> Recent Research
@@ -100,14 +100,16 @@ function App() {
           </div>
         </aside>
 
-        {/* MAIN: Search & Content */}
-        <main className="lg:col-span-3 space-y-6">
+        {/* MAIN: Search & Content (9/12 = 75% on large screens) */}
+        <main className="lg:col-span-9 space-y-6">
           {/* Hero Header */}
           <header className="text-center mb-10">
-            <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent mb-2">
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent mb-2 leading-tight">
               Agentic Insight Scraper
             </h1>
-            <p className="text-slate-500 dark:text-slate-400">Deep web research & summarization powered by Tavily + Gemini</p>
+            <p className="text-slate-500 dark:text-slate-400">
+              Deep web research & summarization powered by Tavily + Gemini
+            </p>
           </header>
 
           {/* Search Card */}
